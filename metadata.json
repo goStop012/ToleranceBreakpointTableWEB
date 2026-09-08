@@ -1,0 +1,6 @@
+{
+  "name": "公差切点表与形位公差速查",
+  "description": "专业机械加工公差切点表管理工具，支持正常/公差/表达式输入、GB/T 1804自由公差自动填入，以及形状和位置公差符号标准速查。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
