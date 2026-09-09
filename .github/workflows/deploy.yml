@@ -45,6 +45,11 @@ jobs:
       - name: Build application
         run: npm run build
 
+      - name: Create verification file
+        run: |
+          mkdir -p dist
+          printf '27feab85e448f68a1b791cfdf11d2376aa356cb3' > dist/8a7214f35d3aca51c60c742c793168a0.txt
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
