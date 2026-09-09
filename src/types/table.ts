@@ -1,4 +1,7 @@
-export type PositionType = '' | 'outer' | 'inner' | 'face' | 'side' | 'verify' | 'length';
+import { PositionType } from './position';
+
+export type { PositionType };
+export type { PositionOption } from './position';
 
 export type InputMode = 'normal' | 'tolerance' | 'expression';
 
@@ -10,6 +13,7 @@ export interface ToleranceInputState {
   lower: string;
   selected: ToleranceSelection;
   freeGrade?: 'f' | 'm' | 'c' | 'v' | '';
+  fitCode?: string;
 }
 
 export interface TableItem {
@@ -22,6 +26,8 @@ export interface TableItem {
   expression?: string;
   toleranceInput?: ToleranceInputState;
   starred?: boolean;
+  rawInput?: string;
+  rawUnit?: string;
 }
 
 export interface TableGroup {

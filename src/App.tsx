@@ -11,6 +11,8 @@ import {
   TableItem,
   ToleranceInputState,
 } from './types/table';
+import { UnitConfig, ExistingValueConversionStrategy, UnitMode } from './types/unit';
+import { PositionOption } from './types/position';
 import {
   createDefaultTable,
   exportTableAsJson,
@@ -20,13 +22,19 @@ import {
   renumberItems,
   saveModeToStorage,
   saveTablesToStorage,
+  saveUnitConfigToStorage,
+  savePositionsConfig,
 } from './utils/storage';
+import { convertLength, formatLengthValue, parseNumberOrFraction, convertAllTablesUnit, getUnitsFromMode } from './utils/unit';
 import { Header } from './components/Header';
 import { Toolbar } from './components/Toolbar';
 import { TableView } from './components/TableView';
 import { CalculatorModal } from './components/CalculatorModal';
 import { GdtSymbolsModal } from './components/GdtSymbolsModal';
+import { UnitSettingsModal } from './components/UnitSettingsModal';
+import { PositionConfigModal } from './components/PositionConfigModal';
 import { TableNameModal, DeleteConfirmModal } from './components/TableManageModals';
+import { FitToleranceModal } from './components/FitToleranceModal';
 
 export default function App() {
   const initial = useMemo(() => loadInitialState(), []);
@@ -34,9 +42,20 @@ export default function App() {
   const [tables, setTables] = useState<TableData[]>(initial.tables);
   const [activeTableId, setActiveTableId] = useState<string>(initial.activeTableId);
   const [inputMode, setInputMode] = useState<InputMode>(initial.mode);
+  const [unitConfig, setUnitConfig] = useState<UnitConfig>(initial.unitConfig);
+  const [positions, setPositions] = useState<PositionOption[]>(initial.positions);
 
   // Modals state
   const [gdtModalOpen, setGdtModalOpen] = useState(false);
+  const [unitModalOpen, setUnitModalOpen] = useState(false);
+  const [positionModalOpen, setPositionModalOpen] = useState(false);
+  const [fitModal, setFitModal] = useState<{
+    isOpen: boolean;
+    initialSize?: string;
+    targetItemId?: string;
+  }>({
+    isOpen: false,
+  });
   const [calcModal, setCalcModal] = useState<{
     isOpen: boolean;
     item: TableItem | null;
@@ -80,6 +99,83 @@ export default function App() {
     saveModeToStorage(inputMode);
   }, [inputMode]);
 
+  // Persist unit configuration on changes
+  useEffect(() => {
+    saveUnitConfigToStorage(unitConfig);
+  }, [unitConfig]);
+
+  // Handle applying new unit configuration with conversion strategy
+  const handleApplyUnitConfig = (
+    newConfig: UnitConfig,
+    strategy: ExistingValueConversionStrategy
+  ) => {
+    const prevConfig = unitConfig;
+    setUnitConfig(newConfig);
+
+    // Apply conversion to table items across all tables
+    setTables((prevTables) => {
+      return convertAllTablesUnit(prevTables, prevConfig, newConfig, strategy);
+    });
+
+    const isDisplayUnitChanged = prevConfig.displayUnit !== newConfig.displayUnit;
+    if (isDisplayUnitChanged && strategy === 'convert_display') {
+      setCopyFeedback(`单位已切换为【${newConfig.displayUnit === 'mm' ? '毫米(mm)' : '英寸(inch)'}】，表格数值已自动换算！`);
+    } else if (strategy === 'recalc_from_input') {
+      setCopyFeedback(`已按新输入单位【${newConfig.inputUnit === 'mm' ? '毫米' : '英寸'}】重新换算表格数值！`);
+    } else {
+      setCopyFeedback(`单位设置已保存！`);
+    }
+    setTimeout(() => setCopyFeedback(''), 2500);
+  };
+
+  // Quick unit mode change from Header dropdown
+  const handleQuickSwitchUnitMode = (mode: UnitMode) => {
+    const { inputUnit, displayUnit } = getUnitsFromMode(mode);
+    const newConfig: UnitConfig = {
+      ...unitConfig,
+      mode,
+      inputUnit,
+      displayUnit,
+    };
+    handleApplyUnitConfig(newConfig, 'convert_display');
+  };
+
+  // Batch convert values of current active table
+  const handleBatchConvertCurrentTable = (fromUnit: 'mm' | 'inch', toUnit: 'mm' | 'inch') => {
+    if (fromUnit === toUnit) return;
+    const targetDecimals = toUnit === 'mm' ? unitConfig.mmDecimals : unitConfig.inchDecimals;
+
+    updateActiveTable((tb) => ({
+      ...tb,
+      items: tb.items.map((item) => {
+        if (!item.value) return item;
+        const num = parseNumberOrFraction(item.value);
+        if (num === null) return item;
+
+        const converted = convertLength(num, fromUnit, toUnit);
+        const formatted = formatLengthValue(converted, toUnit, targetDecimals);
+
+        return {
+          ...item,
+          value: formatted,
+          rawInput: item.rawInput || item.value,
+          rawUnit: fromUnit,
+        };
+      }),
+    }));
+
+    setCopyFeedback(`当前表数值已从【${fromUnit}】换算为【${toUnit}】！`);
+    setTimeout(() => setCopyFeedback(''), 2500);
+  };
+
+  // Save positions configuration
+  const handleSavePositions = (newPositions: PositionOption[]) => {
+    setPositions(newPositions);
+    savePositionsConfig(newPositions);
+    setCopyFeedback('位置标签下拉配置已更新！');
+    setTimeout(() => setCopyFeedback(''), 2500);
+  };
+
   // Helper to mutate active table
   const updateActiveTable = useCallback(
     (updater: (tb: TableData) => TableData) => {
@@ -109,7 +205,12 @@ export default function App() {
     }));
   };
 
-  const handleValueChange = (id: string, value: string) => {
+  const handleValueChange = (
+    id: string,
+    value: string,
+    rawInput?: string,
+    rawUnit?: 'mm' | 'inch'
+  ) => {
     updateActiveTable((tb) => ({
       ...tb,
       items: tb.items.map((it) =>
@@ -117,6 +218,8 @@ export default function App() {
           ? {
               ...it,
               value,
+              rawInput: rawInput ?? value,
+              rawUnit: rawUnit ?? unitConfig.inputUnit,
               source: undefined,
               expression: undefined,
               toleranceInput: undefined,
@@ -140,6 +243,8 @@ export default function App() {
     source: 'tolerance' | 'expression';
     toleranceInput?: ToleranceInputState;
     expression?: string;
+    rawInput?: string;
+    rawUnit?: 'mm' | 'inch';
   }) => {
     if (!calcModal.item) return;
     const itemId = calcModal.item.id;
@@ -154,6 +259,8 @@ export default function App() {
               source: result.source,
               toleranceInput: result.toleranceInput,
               expression: result.expression,
+              rawInput: result.rawInput,
+              rawUnit: result.rawUnit,
             }
           : it
       ),
@@ -352,26 +459,94 @@ export default function App() {
     setTimeout(() => setCopyFeedback(''), 2000);
   };
 
-  // Mode footer tip
-  const modeHint = useMemo(() => {
+  // Apply fit tolerance calculated result
+  const handleApplyFitTolerance = (result: {
+    nominal: string;
+    upper: string;
+    lower: string;
+    fitCode: string;
+  }) => {
+    const nom = parseFloat(result.nominal) || 0;
+    const u = parseFloat(result.upper) || 0;
+    const l = parseFloat(result.lower) || 0;
+    const midVal = nom + (u + l) / 2;
+    const targetItemId = fitModal.targetItemId || activeTable.items[0]?.id;
+
+    if (!targetItemId) return;
+
+    const displayDecimals = unitConfig.displayUnit === 'mm' ? unitConfig.mmDecimals : unitConfig.inchDecimals;
+    const convertedMid = convertLength(midVal, unitConfig.inputUnit, unitConfig.displayUnit);
+    const finalVal = formatLengthValue(convertedMid, unitConfig.displayUnit, displayDecimals);
+
+    updateActiveTable((prev) => ({
+      ...prev,
+      items: prev.items.map((it) =>
+        it.id === targetItemId
+          ? {
+              ...it,
+              value: finalVal,
+              source: 'tolerance',
+              toleranceInput: {
+                nominal: result.nominal,
+                upper: result.upper,
+                lower: result.lower,
+                selected: 'middle',
+                fitCode: result.fitCode,
+              },
+              rawInput: result.nominal,
+              rawUnit: unitConfig.inputUnit,
+            }
+          : it
+      ),
+    }));
+
+    setCopyFeedback(`已将 ${result.fitCode} 公差应用至切点表！`);
+    setTimeout(() => setCopyFeedback(''), 2500);
+  };
+
+  // Mode and unit footer tip
+  const footerHint = useMemo(() => {
+    let modeText = '';
     switch (inputMode) {
       case 'normal':
-        return '正常模式：直接在输入框中键入切点坐标数值';
+        modeText = '正常模式：直接在输入框中键入数值';
+        break;
       case 'tolerance':
-        return '公差模式：点击输入框调出公差计算器，支持 GB/T 1804 自由公差等级自动填入';
+        modeText = '公差模式：点击输入框调出公差计算器，支持自由公差等级 (GB/T 1804)';
+        break;
       case 'expression':
-        return '表达式模式：点击输入框调出表达式计算器进行四则运算';
+        modeText = '表达式模式：点击输入框调出表达式计算器进行四则运算';
+        break;
     }
-  }, [inputMode]);
+
+    const unitRuleText =
+      unitConfig.inputUnit === unitConfig.displayUnit
+        ? `当前单位：输入与显示均为 ${unitConfig.inputUnit}`
+        : `当前单位：输入 ${unitConfig.inputUnit} ➔ 显示 ${unitConfig.displayUnit} (自动换算)`;
+
+    return `${modeText} ｜ ${unitRuleText}`;
+  }, [inputMode, unitConfig]);
 
   return (
     <div className="flex flex-col h-screen bg-[#161e26] text-[#cbd2d9] font-sans antialiased overflow-hidden select-none">
       {/* Container wrapper constrained to industrial standard max width */}
       <div className="flex-1 flex flex-col max-w-4xl w-full mx-auto overflow-hidden">
-        {/* App Header with GD&T launcher */}
-        <Header onOpenGdtModal={() => setGdtModalOpen(true)} />
+        {/* App Header with GD&T launcher, Unit Settings, Position Dropdown Config, and Fit Tolerances */}
+        <Header
+          onOpenGdtModal={() => setGdtModalOpen(true)}
+          unitConfig={unitConfig}
+          onOpenUnitModal={() => setUnitModalOpen(true)}
+          onSelectUnitMode={handleQuickSwitchUnitMode}
+          onOpenPositionModal={() => setPositionModalOpen(true)}
+          onOpenFitModal={() =>
+            setFitModal({
+              isOpen: true,
+              initialSize: activeTable.items[0]?.toleranceInput?.nominal || activeTable.items[0]?.value || '20',
+            })
+          }
+        />
 
-        {/* Toolbar: mode switcher, table selector, and quick copy */}
+        {/* Toolbar: mode switcher, table selector, position config and quick copy */}
         <Toolbar
           inputMode={inputMode}
           onSetInputMode={setInputMode}
@@ -385,12 +560,16 @@ export default function App() {
           onImportTable={handleImportTable}
           onCopyRow={handleCopyRow}
           copyFeedback={copyFeedback}
+          positions={positions}
+          onOpenPositionModal={() => setPositionModalOpen(true)}
         />
 
         {/* Table & Groups content */}
         <TableView
           table={activeTable}
           inputMode={inputMode}
+          unitConfig={unitConfig}
+          positions={positions}
           onToggleStar={handleToggleStar}
           onPositionChange={handlePositionChange}
           onValueChange={handleValueChange}
@@ -406,24 +585,50 @@ export default function App() {
 
         {/* Bottom hint bar */}
         <footer className="px-4 py-2 border-t border-[#323f4b] bg-[#1f2933] text-center text-[11px] text-[#7b8794]">
-          {modeHint}
+          {footerHint}
         </footer>
       </div>
 
-      {/* Feature 1 Modal: Tolerance and Expression Calculator with Free Tolerance */}
+      {/* Feature 1 Modal: Tolerance and Expression Calculator with Free & Fit Tolerance */}
       <CalculatorModal
         isOpen={calcModal.isOpen}
         item={calcModal.item}
         initialMode={calcModal.initialMode}
+        unitConfig={unitConfig}
         onClose={() => setCalcModal({ isOpen: false, item: null, initialMode: 'tolerance' })}
         onConfirm={handleConfirmCalculator}
         onClearValue={handleClearValue}
+        onOpenFitModal={(nom) =>
+          setFitModal({
+            isOpen: true,
+            initialSize: nom || calcModal.item?.toleranceInput?.nominal || calcModal.item?.value || '20',
+            targetItemId: calcModal.item?.id,
+          })
+        }
       />
 
       {/* Feature 2 Modal: GD&T Shape and Position Tolerances Viewer */}
       <GdtSymbolsModal
         isOpen={gdtModalOpen}
         onClose={() => setGdtModalOpen(false)}
+      />
+
+      {/* Feature 4 Modal: ISO 286 / GB 1800 Fit Tolerance (孔轴配合公差) Calculator */}
+      <FitToleranceModal
+        isOpen={fitModal.isOpen}
+        unitConfig={unitConfig}
+        initialSize={fitModal.initialSize}
+        onClose={() => setFitModal({ isOpen: false })}
+        onApplyTolerance={handleApplyFitTolerance}
+      />
+
+      {/* Feature 3 Modal: Metric & Imperial Unit Settings & Converter */}
+      <UnitSettingsModal
+        isOpen={unitModalOpen}
+        config={unitConfig}
+        onClose={() => setUnitModalOpen(false)}
+        onSaveConfig={handleApplyUnitConfig}
+        onBatchConvertCurrentTable={handleBatchConvertCurrentTable}
       />
 
       {/* Table Name (New / Rename) Modal */}
@@ -447,6 +652,15 @@ export default function App() {
         targetTable={deleteModal.targetTable}
         onClose={() => setDeleteModal({ isOpen: false, targetTable: null })}
         onConfirm={handleDeleteTable}
+      />
+
+      {/* Position & Feature Tags Configuration Modal */}
+      <PositionConfigModal
+        isOpen={positionModalOpen}
+        positions={positions}
+        tables={tables}
+        onClose={() => setPositionModalOpen(false)}
+        onSavePositions={handleSavePositions}
       />
     </div>
   );

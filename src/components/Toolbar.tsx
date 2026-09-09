@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Plus, Edit2, Trash2, Download, Upload, FileText, Check } from 'lucide-react';
+import { ChevronDown, Plus, Edit2, Trash2, Download, Upload, Check, Settings2 } from 'lucide-react';
 import { InputMode, PositionType, TableData } from '../types/table';
+import { PositionOption } from '../types/position';
 import { POSITIONS } from '../constants/positions';
 
 interface ToolbarProps {
@@ -16,6 +17,8 @@ interface ToolbarProps {
   onImportTable: (file: File) => void;
   onCopyRow: (rowNo: number, targetPosition: PositionType) => void;
   copyFeedback: string;
+  positions?: PositionOption[];
+  onOpenPositionModal?: () => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -31,12 +34,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onImportTable,
   onCopyRow,
   copyFeedback,
+  positions,
+  onOpenPositionModal,
 }) => {
   const [tableMenuOpen, setTableMenuOpen] = useState(false);
   const [copyNo, setCopyNo] = useState('');
   const [copyPos, setCopyPos] = useState<PositionType>('outer');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const availablePositions = positions || POSITIONS;
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -213,17 +220,29 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             className="w-20 bg-[#161e26] border border-[#3e4c59] focus:border-[#3aad42] rounded-lg px-2.5 py-1 text-xs text-[#f5f7fa] font-mono outline-none"
           />
 
-          <select
-            value={copyPos}
-            onChange={(e) => setCopyPos(e.target.value as PositionType)}
-            className="bg-[#161e26] border border-[#3e4c59] focus:border-[#3aad42] rounded-lg px-2 py-1 text-xs text-[#cbd2d9] outline-none cursor-pointer"
-          >
-            {POSITIONS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-1">
+            <select
+              value={copyPos}
+              onChange={(e) => setCopyPos(e.target.value as PositionType)}
+              className="bg-[#161e26] border border-[#3e4c59] focus:border-[#3aad42] rounded-lg px-2 py-1 text-xs text-[#cbd2d9] outline-none cursor-pointer"
+            >
+              {availablePositions.map((p) => (
+                <option key={p.id || p.value || 'none'} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            {onOpenPositionModal && (
+              <button
+                type="button"
+                onClick={onOpenPositionModal}
+                className="p-1 rounded text-[#7b8794] hover:text-[#5ec864] hover:bg-[#26313c] transition-colors"
+                title="配置下拉列表选项"
+              >
+                <Settings2 size={13} />
+              </button>
+            )}
+          </div>
 
           <button
             onClick={handleTriggerCopy}

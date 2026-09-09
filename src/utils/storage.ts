@@ -1,10 +1,16 @@
 import { InputMode, TableData, TableItem } from '../types/table';
+import { UnitConfig } from '../types/unit';
+import { DEFAULT_UNIT_CONFIG } from '../constants/units';
+import { PositionOption } from '../types/position';
+import { DEFAULT_POSITIONS } from '../constants/positions';
 import { genId } from './math';
 
 export { genId };
 
 export const LS_TABLES_KEY = 'tol_breakpoint_tables';
 export const LS_MODE_KEY = 'tol_breakpoint_input_mode';
+export const LS_UNIT_CONFIG_KEY = 'tol_breakpoint_unit_config';
+export const LS_POSITIONS_KEY = 'tol_breakpoint_custom_positions';
 
 export function createDefaultTable(name: string = '默认表', groupName: string = '默认分组'): TableData {
   const gid = genId();
@@ -57,13 +63,9 @@ export function normalizeTables(raw: unknown): TableData[] {
     for (const it of itemsRaw) {
       if (!it || typeof it !== 'object') continue;
       const rec = it as Record<string, unknown>;
+      // 支持所有非空的位置特征标签（包括内置与用户自定义）
       const positionValid =
-        rec.position === 'outer' ||
-        rec.position === 'inner' ||
-        rec.position === 'face' ||
-        rec.position === 'side' ||
-        rec.position === 'verify' ||
-        rec.position === 'length';
+        typeof rec.position === 'string' && rec.position.trim() !== '';
 
       items.push({
         id: typeof rec.id === 'string' ? rec.id : genId(),
@@ -78,6 +80,8 @@ export function normalizeTables(raw: unknown): TableData[] {
             ? (rec.toleranceInput as TableItem['toleranceInput'])
             : undefined,
         starred: rec.starred === true ? true : undefined,
+        rawInput: typeof rec.rawInput === 'string' ? rec.rawInput : undefined,
+        rawUnit: rec.rawUnit === 'mm' || rec.rawUnit === 'inch' ? rec.rawUnit : undefined,
       });
     }
 
@@ -96,9 +100,85 @@ export function normalizeTables(raw: unknown): TableData[] {
   return tables;
 }
 
-export function loadInitialState(): { tables: TableData[]; activeTableId: string; mode: InputMode } {
+export function loadUnitConfig(): UnitConfig {
+  try {
+    const raw = localStorage.getItem(LS_UNIT_CONFIG_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (
+        parsed &&
+        (parsed.mode === 'in_to_mm' ||
+          parsed.mode === 'mm_to_mm' ||
+          parsed.mode === 'in_to_in' ||
+          parsed.mode === 'mm_to_in')
+      ) {
+        return {
+          mode: parsed.mode,
+          inputUnit: parsed.inputUnit || (parsed.mode.startsWith('in') ? 'inch' : 'mm'),
+          displayUnit: parsed.displayUnit || (parsed.mode.endsWith('mm') ? 'mm' : 'inch'),
+          mmDecimals: typeof parsed.mmDecimals === 'number' ? parsed.mmDecimals : 4,
+          inchDecimals: typeof parsed.inchDecimals === 'number' ? parsed.inchDecimals : 4,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load unit config from localStorage', err);
+  }
+  return DEFAULT_UNIT_CONFIG;
+}
+
+export function saveUnitConfigToStorage(config: UnitConfig) {
+  try {
+    localStorage.setItem(LS_UNIT_CONFIG_KEY, JSON.stringify(config));
+  } catch (err) {
+    console.error('Error saving unit config to localStorage', err);
+  }
+}
+
+export function loadPositionsConfig(): PositionOption[] {
+  try {
+    const raw = localStorage.getItem(LS_POSITIONS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Ensure every item has id, value, and label
+        return parsed
+          .filter((p) => p && typeof p.label === 'string')
+          .map((p) => ({
+            id: typeof p.id === 'string' ? p.id : (typeof p.value === 'string' ? p.value : genId()),
+            value: typeof p.value === 'string' ? p.value : (typeof p.id === 'string' ? p.id : ''),
+            label: p.label,
+            color: typeof p.color === 'string' ? p.color : undefined,
+            isPreset: p.isPreset === true,
+            description: typeof p.description === 'string' ? p.description : undefined,
+          }));
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load positions config from localStorage', err);
+  }
+  return DEFAULT_POSITIONS;
+}
+
+export function savePositionsConfig(positions: PositionOption[]) {
+  try {
+    localStorage.setItem(LS_POSITIONS_KEY, JSON.stringify(positions));
+  } catch (err) {
+    console.error('Error saving positions config to localStorage', err);
+  }
+}
+
+export function loadInitialState(): {
+  tables: TableData[];
+  activeTableId: string;
+  mode: InputMode;
+  unitConfig: UnitConfig;
+  positions: PositionOption[];
+} {
   let tables: TableData[] = [];
   let mode: InputMode = 'normal';
+  const unitConfig = loadUnitConfig();
+  const positions = loadPositionsConfig();
 
   try {
     const raw = localStorage.getItem(LS_TABLES_KEY);
@@ -128,6 +208,8 @@ export function loadInitialState(): { tables: TableData[]; activeTableId: string
     tables,
     activeTableId: tables[0].id,
     mode,
+    unitConfig,
+    positions,
   };
 }
 

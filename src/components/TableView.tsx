@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Edit2, Trash2, Plus, Check, X } from 'lucide-react';
 import { InputMode, PositionType, TableData, TableItem } from '../types/table';
+import { UnitConfig } from '../types/unit';
+import { PositionOption } from '../types/position';
 import { ItemRow } from './ItemRow';
 
 interface TableViewProps {
   table: TableData;
   inputMode: InputMode;
+  unitConfig: UnitConfig;
+  positions?: PositionOption[];
   onToggleStar: (id: string) => void;
   onPositionChange: (id: string, position: PositionType) => void;
-  onValueChange: (id: string, value: string) => void;
+  onValueChange: (id: string, value: string, rawInput?: string, rawUnit?: 'mm' | 'inch') => void;
   onOpenCalculator: (item: TableItem) => void;
   onAddAfter: (id: string) => void;
   onDeleteItem: (id: string) => void;
@@ -22,6 +26,8 @@ interface TableViewProps {
 export const TableView: React.FC<TableViewProps> = ({
   table,
   inputMode,
+  unitConfig,
+  positions,
   onToggleStar,
   onPositionChange,
   onValueChange,
@@ -81,7 +87,7 @@ export const TableView: React.FC<TableViewProps> = ({
 
   return (
     <div className="flex-1 overflow-y-auto px-3.5 py-2 space-y-4">
-      <div className="max-w-3xl mx-auto space-y-3">
+      <div className="w-full space-y-3">
         {/* Render grouped sections */}
         {groups.map((group) => {
           const groupItems = items.filter((it) => it.groupId === group.id);
@@ -160,12 +166,14 @@ export const TableView: React.FC<TableViewProps> = ({
 
               {/* Group Items list */}
               {!isCollapsed && (
-                <div className="space-y-0.5 pl-2 sm:pl-3 border-l-2 border-[#323f4b]/60">
+                <div className="space-y-0.5">
                   {groupItems.map((item) => (
                     <ItemRow
                       key={item.id}
                       item={item}
                       inputMode={inputMode}
+                      unitConfig={unitConfig}
+                      positions={positions}
                       onToggleStar={onToggleStar}
                       onPositionChange={onPositionChange}
                       onValueChange={onValueChange}
@@ -205,6 +213,8 @@ export const TableView: React.FC<TableViewProps> = ({
                 key={item.id}
                 item={item}
                 inputMode={inputMode}
+                unitConfig={unitConfig}
+                positions={positions}
                 onToggleStar={onToggleStar}
                 onPositionChange={onPositionChange}
                 onValueChange={onValueChange}
