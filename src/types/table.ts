@@ -1,4 +1,5 @@
 import { PositionType } from './position';
+import { LengthUnit } from './unit';
 
 export type { PositionType };
 export type { PositionOption } from './position';
@@ -24,10 +25,12 @@ export interface TableItem {
   groupId?: string;
   source?: 'tolerance' | 'expression';
   expression?: string;
+  /** 算式创建时的物理量纲锚点，防止跨单位切换时发生量纲漂移 */
+  expressionUnit?: LengthUnit;
   toleranceInput?: ToleranceInputState;
   starred?: boolean;
   rawInput?: string;
-  rawUnit?: string;
+  rawUnit?: LengthUnit | string;
 }
 
 export interface TableGroup {

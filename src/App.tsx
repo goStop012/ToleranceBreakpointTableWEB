@@ -209,7 +209,13 @@ export default function App() {
     id: string,
     value: string,
     rawInput?: string,
-    rawUnit?: 'mm' | 'inch'
+    rawUnit?: 'mm' | 'inch',
+    extra?: {
+      source?: 'tolerance' | 'expression';
+      expression?: string;
+      expressionUnit?: 'mm' | 'inch';
+      toleranceInput?: ToleranceInputState;
+    }
   ) => {
     updateActiveTable((tb) => ({
       ...tb,
@@ -220,9 +226,10 @@ export default function App() {
               value,
               rawInput: rawInput ?? value,
               rawUnit: rawUnit ?? unitConfig.inputUnit,
-              source: undefined,
-              expression: undefined,
-              toleranceInput: undefined,
+              source: extra ? extra.source : undefined,
+              expression: extra ? extra.expression : undefined,
+              expressionUnit: extra?.source === 'expression' ? (extra.expressionUnit ?? (rawUnit ?? unitConfig.inputUnit)) : undefined,
+              toleranceInput: extra ? extra.toleranceInput : undefined,
             }
           : it
       ),
@@ -243,6 +250,7 @@ export default function App() {
     source: 'tolerance' | 'expression';
     toleranceInput?: ToleranceInputState;
     expression?: string;
+    expressionUnit?: 'mm' | 'inch';
     rawInput?: string;
     rawUnit?: 'mm' | 'inch';
   }) => {
@@ -259,6 +267,7 @@ export default function App() {
               source: result.source,
               toleranceInput: result.toleranceInput,
               expression: result.expression,
+              expressionUnit: result.source === 'expression' ? (result.expressionUnit ?? (result.rawUnit ?? unitConfig.inputUnit)) : undefined,
               rawInput: result.rawInput,
               rawUnit: result.rawUnit,
             }

@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Star, Plus, X } from 'lucide-react';
-import { InputMode, PositionType, TableItem } from '../types/table';
+import { InputMode, PositionType, TableItem, ToleranceInputState } from '../types/table';
 import { UnitConfig } from '../types/unit';
 import { PositionOption } from '../types/position';
 import { POSITIONS } from '../constants/positions';
-import { processInputWithUnit } from '../utils/unit';
+import { processInputWithUnit, convertLength, formatLengthValue } from '../utils/unit';
+import { evaluateExpression } from '../utils/expression';
+import { getItemBadges } from '../utils/badge';
+import { ItemBadges } from './ItemBadges';
+import { ItemBadgeInfo } from '../types/badge';
 
 interface ItemRowProps {
   item: TableItem;
@@ -13,7 +17,18 @@ interface ItemRowProps {
   positions?: PositionOption[];
   onToggleStar: (id: string) => void;
   onPositionChange: (id: string, position: PositionType) => void;
-  onValueChange: (id: string, value: string, rawInput?: string, rawUnit?: 'mm' | 'inch') => void;
+  onValueChange: (
+    id: string,
+    value: string,
+    rawInput?: string,
+    rawUnit?: 'mm' | 'inch',
+    extra?: {
+      source?: 'tolerance' | 'expression';
+      expression?: string;
+      expressionUnit?: 'mm' | 'inch';
+      toleranceInput?: ToleranceInputState;
+    }
+  ) => void;
   onOpenCalculator: (item: TableItem) => void;
   onAddAfter: (id: string) => void;
   onDeleteItem: (id: string) => void;
@@ -38,6 +53,9 @@ export const ItemRow: React.FC<ItemRowProps> = ({
   const currentPos = availablePositions.find((p) => p.value === (item.position || ''));
   const hasUnknownPosition = Boolean(item.position && !currentPos);
 
+  // Parse all active badges for this item
+  const badges = useMemo(() => getItemBadges(item, unitConfig), [item, unitConfig]);
+
   // Sync when outside item changes or unit configuration updates
   useEffect(() => {
     setLocalValue(item.value);
@@ -49,6 +67,16 @@ export const ItemRow: React.FC<ItemRowProps> = ({
     }
   };
 
+  const handleBadgeClick = (badge: ItemBadgeInfo) => {
+    if (badge.type === 'expression') {
+      onOpenCalculator({ ...item, source: 'expression' });
+    } else if (badge.type === 'tolerance' || badge.type === 'fit' || badge.type === 'free') {
+      onOpenCalculator({ ...item, source: 'tolerance' });
+    } else {
+      onOpenCalculator(item);
+    }
+  };
+
   const handleCommitChange = (rawInputText: string) => {
     const trimmed = rawInputText.trim();
     if (!trimmed) {
@@ -56,7 +84,32 @@ export const ItemRow: React.FC<ItemRowProps> = ({
       return;
     }
 
-    // If unit conversion is needed (e.g. in -> mm or mm -> in) or fraction was entered
+    // 1. Direct mathematical expression evaluation (e.g. "=10+5*2" or "25.4*2+5")
+    const isExplicitExpr = trimmed.startsWith('=');
+    const exprText = isExplicitExpr ? trimmed.slice(1).trim() : trimmed;
+    const hasMathOp = /[+\-*/]/.test(exprText) && !/^[+-]?\d+(\.\d+)?$/.test(exprText);
+
+    if (isExplicitExpr || hasMathOp) {
+      const evalRes = evaluateExpression(exprText);
+      if (!evalRes.error && isFinite(evalRes.value)) {
+        const converted = convertLength(evalRes.value, unitConfig.inputUnit, unitConfig.displayUnit);
+        const displayDecimals = unitConfig.displayUnit === 'mm' ? unitConfig.mmDecimals : unitConfig.inchDecimals;
+        const formattedDisplay = formatLengthValue(converted, unitConfig.displayUnit, displayDecimals);
+
+        const inputDecimals = unitConfig.inputUnit === 'mm' ? unitConfig.mmDecimals : unitConfig.inchDecimals;
+        const rawEvaluated = formatLengthValue(evalRes.value, unitConfig.inputUnit, inputDecimals);
+
+        onValueChange(item.id, formattedDisplay, rawEvaluated, unitConfig.inputUnit, {
+          source: 'expression',
+          expression: trimmed,
+          expressionUnit: unitConfig.inputUnit,
+        });
+        setLocalValue(formattedDisplay);
+        return;
+      }
+    }
+
+    // 2. If unit conversion is needed (e.g. in -> mm or mm -> in) or fraction was entered
     if (unitConfig.inputUnit !== unitConfig.displayUnit) {
       const decimals = unitConfig.displayUnit === 'mm' ? unitConfig.mmDecimals : unitConfig.inchDecimals;
       const res = processInputWithUnit(trimmed, unitConfig.inputUnit, unitConfig.displayUnit, decimals);
@@ -76,16 +129,13 @@ export const ItemRow: React.FC<ItemRowProps> = ({
       }
     }
 
-    // Default fallback commit
+    // 3. Default fallback commit
     onValueChange(item.id, trimmed);
     setLocalValue(trimmed);
   };
 
   const displayUnitLabel = unitConfig.displayUnit === 'inch' ? '″' : 'mm';
-  const hasRawInput = Boolean(item.rawInput && unitConfig.inputUnit !== unitConfig.displayUnit);
-  const hasFreeGrade = Boolean(item.toleranceInput?.freeGrade);
-  const hasFitCode = Boolean(item.toleranceInput?.fitCode);
-  const hasBadges = hasRawInput || hasFreeGrade || hasFitCode;
+  const inputTooltip = badges.length > 0 ? badges.map((b) => b.tooltip).join(' | ') : undefined;
 
   return (
     <div
@@ -151,21 +201,7 @@ export const ItemRow: React.FC<ItemRowProps> = ({
               }
             }}
             onClick={handleInputClick}
-            title={
-              item.source === 'tolerance' && item.toleranceInput
-                ? `名义值: ${item.toleranceInput.nominal} | 偏差: +${item.toleranceInput.upper} / -${item.toleranceInput.lower} | 取: ${
-                    item.toleranceInput.selected === 'upper'
-                      ? '上偏差'
-                      : item.toleranceInput.selected === 'lower'
-                      ? '下偏差'
-                      : '中间值'
-                  }${item.toleranceInput.fitCode ? ` (配合: ${item.toleranceInput.fitCode})` : ''}${
-                    item.toleranceInput.freeGrade ? ` (GB/T 1804-${item.toleranceInput.freeGrade})` : ''
-                  }`
-                : item.source === 'expression' && item.expression
-                ? `计算公式: ${item.expression}`
-                : undefined
-            }
+            title={inputTooltip}
             placeholder={
               isReadOnly
                 ? '点击编辑'
@@ -187,36 +223,7 @@ export const ItemRow: React.FC<ItemRowProps> = ({
         </div>
 
         {/* Desktop-only In-line Status Badges */}
-        {hasBadges && (
-          <div className="hidden sm:flex items-center gap-1 shrink-0">
-            {hasRawInput && (
-              <span
-                className="text-[10px] px-1.5 py-0.5 rounded bg-[#26313c] text-[#9aa5b1] font-mono border border-[#3e4c59] whitespace-nowrap select-none"
-                title={`原始输入尺寸: ${item.rawInput} ${item.rawUnit || unitConfig.inputUnit}`}
-              >
-                {item.rawInput}{item.rawUnit === 'inch' ? '″' : ''}
-              </span>
-            )}
-
-            {hasFitCode && (
-              <span
-                className="text-[10px] px-1.5 py-0.5 rounded bg-[#3b82f6]/15 text-[#60a5fa] border border-[#3b82f6]/30 font-mono font-bold whitespace-nowrap select-none"
-                title={`配合公差代号: ISO 286 / GB 1800 ${item.toleranceInput?.fitCode}`}
-              >
-                {item.toleranceInput?.fitCode}
-              </span>
-            )}
-
-            {hasFreeGrade && (
-              <span
-                className="text-[10px] px-1.5 py-0.5 rounded bg-[#3aad42]/15 text-[#5ec864] border border-[#3aad42]/30 font-mono font-medium whitespace-nowrap select-none"
-                title={`自由公差等级: GB/T 1804-${item.toleranceInput?.freeGrade}`}
-              >
-                {item.toleranceInput?.freeGrade}级
-              </span>
-            )}
-          </div>
-        )}
+        <ItemBadges badges={badges} variant="inline" onBadgeClick={handleBadgeClick} />
 
         {/* Add Row After button */}
         <button
@@ -239,36 +246,8 @@ export const ItemRow: React.FC<ItemRowProps> = ({
         </button>
       </div>
 
-      {/* Mobile Sub-line (only rendered on narrow screens when metadata tags exist) */}
-      {hasBadges && (
-        <div className="sm:hidden flex items-center gap-1.5 pl-6 pt-1 text-[10px]">
-          <span className="text-[#52606d] font-mono">↳</span>
-          {hasRawInput && (
-            <span
-              className="px-1.5 py-0.5 rounded bg-[#26313c] text-[#cbd2d9] font-mono border border-[#3e4c59] select-none"
-              title={`原始输入尺寸: ${item.rawInput}`}
-            >
-              原: {item.rawInput}{item.rawUnit === 'inch' ? '″' : ''}
-            </span>
-          )}
-          {hasFitCode && (
-            <span
-              className="px-1.5 py-0.5 rounded bg-[#3b82f6]/15 text-[#60a5fa] border border-[#3b82f6]/30 font-mono font-bold select-none"
-              title={`配合公差代号: ${item.toleranceInput?.fitCode}`}
-            >
-              配合 {item.toleranceInput?.fitCode}
-            </span>
-          )}
-          {hasFreeGrade && (
-            <span
-              className="px-1.5 py-0.5 rounded bg-[#3aad42]/15 text-[#5ec864] border border-[#3aad42]/30 font-mono font-medium select-none"
-              title={`自由公差等级: GB/T 1804-${item.toleranceInput?.freeGrade}`}
-            >
-              GB/T 1804-{item.toleranceInput?.freeGrade}级
-            </span>
-          )}
-        </div>
-      )}
+      {/* Mobile Sub-line view */}
+      <ItemBadges badges={badges} variant="subline" onBadgeClick={handleBadgeClick} />
     </div>
   );
 };

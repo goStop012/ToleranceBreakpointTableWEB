@@ -20,6 +20,7 @@ interface CalculatorModalProps {
     source: 'tolerance' | 'expression';
     toleranceInput?: ToleranceInputState;
     expression?: string;
+    expressionUnit?: 'mm' | 'inch';
     rawInput?: string;
     rawUnit?: 'mm' | 'inch';
   }) => void;
@@ -38,6 +39,7 @@ export const CalculatorModal: React.FC<CalculatorModalProps> = ({
   onOpenFitModal,
 }) => {
   const [mode, setMode] = useState<'tolerance' | 'expression'>(initialMode);
+  const [exprUnit, setExprUnit] = useState<'mm' | 'inch'>(unitConfig.inputUnit);
 
   // Tolerance state
   const [nominal, setNominal] = useState('0');
@@ -86,12 +88,18 @@ export const CalculatorModal: React.FC<CalculatorModalProps> = ({
 
     if (item.expression != null) {
       setExpression(item.expression);
+      setExprUnit(
+        item.expressionUnit ||
+          (item.rawUnit === 'inch' || item.rawUnit === 'mm' ? (item.rawUnit as 'mm' | 'inch') : unitConfig.inputUnit)
+      );
     } else if (initialMode === 'expression') {
       setExpression(item.value || '');
+      setExprUnit(unitConfig.inputUnit);
     } else {
       setExpression('');
+      setExprUnit(unitConfig.inputUnit);
     }
-  }, [isOpen, item, initialMode]);
+  }, [isOpen, item, initialMode, unitConfig.inputUnit]);
 
   const displayDecimals = unitConfig.displayUnit === 'mm' ? unitConfig.mmDecimals : unitConfig.inchDecimals;
   const inputDecimals = unitConfig.inputUnit === 'mm' ? unitConfig.mmDecimals : unitConfig.inchDecimals;
@@ -244,15 +252,16 @@ export const CalculatorModal: React.FC<CalculatorModalProps> = ({
     }
 
     const valInInput = ev.value;
-    const targetVal = convertLength(valInInput, unitConfig.inputUnit, unitConfig.displayUnit);
+    const targetVal = convertLength(valInInput, exprUnit, unitConfig.displayUnit);
+    const exprDecimals = exprUnit === 'mm' ? unitConfig.mmDecimals : unitConfig.inchDecimals;
 
     return {
       error: false,
-      inputDisplay: trimN(valInInput, inputDecimals),
+      inputDisplay: trimN(valInInput, exprDecimals),
       display: formatLengthValue(targetVal, unitConfig.displayUnit, displayDecimals),
-      isConverted: unitConfig.inputUnit !== unitConfig.displayUnit,
+      isConverted: exprUnit !== unitConfig.displayUnit,
     };
-  }, [expression, unitConfig, inputDecimals, displayDecimals]);
+  }, [expression, exprUnit, unitConfig, displayDecimals]);
 
   if (!isOpen) return null;
 
@@ -311,7 +320,7 @@ export const CalculatorModal: React.FC<CalculatorModalProps> = ({
           freeGrade: freeGrade || undefined,
           fitCode: fitCode || undefined,
         },
-        expression: hasVisitedExpression && expression ? expression : undefined,
+        expression: undefined,
         rawInput: nominal,
         rawUnit: unitConfig.inputUnit,
       });
@@ -321,15 +330,10 @@ export const CalculatorModal: React.FC<CalculatorModalProps> = ({
         value: expressionResult.display,
         source: 'expression',
         expression,
-        rawInput: expression,
-        rawUnit: unitConfig.inputUnit,
-        toleranceInput: {
-          nominal,
-          upper,
-          lower,
-          selected: selectedPreset,
-          freeGrade: freeGrade || undefined,
-        },
+        expressionUnit: exprUnit,
+        rawInput: expressionResult.inputDisplay,
+        rawUnit: exprUnit,
+        toleranceInput: undefined,
       });
     }
     onClose();
@@ -792,9 +796,37 @@ export const CalculatorModal: React.FC<CalculatorModalProps> = ({
               {/* Expression Input */}
               <div>
                 <div className="flex justify-between items-center mb-1.5">
-                  <label className="text-xs font-medium text-[#cbd2d9]">
-                    数学表达式 ({unitConfig.inputUnit === 'inch' ? 'inch 英寸' : 'mm 毫米'})
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-medium text-[#cbd2d9]">
+                      数学表达式
+                    </label>
+                    <div className="inline-flex items-center rounded-md bg-[#121820] border border-[#52606d] p-0.5 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setExprUnit('mm')}
+                        className={`px-2 py-0.5 rounded font-mono transition-colors ${
+                          exprUnit === 'mm'
+                            ? 'bg-[#3aad42] text-white font-bold shadow-xs'
+                            : 'text-[#9aa5b1] hover:text-white'
+                        }`}
+                        title="算式输入量纲为公制毫米 (mm)"
+                      >
+                        mm
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setExprUnit('inch')}
+                        className={`px-2 py-0.5 rounded font-mono transition-colors ${
+                          exprUnit === 'inch'
+                            ? 'bg-[#3aad42] text-white font-bold shadow-xs'
+                            : 'text-[#9aa5b1] hover:text-white'
+                        }`}
+                        title="算式输入量纲为英制英寸 (inch)"
+                      >
+                        inch
+                      </button>
+                    </div>
+                  </div>
                   <button
                     onClick={handleReuseToleranceInExpression}
                     className="text-[11px] text-[#5ec864] hover:underline flex items-center gap-1"
@@ -807,7 +839,7 @@ export const CalculatorModal: React.FC<CalculatorModalProps> = ({
                   type="text"
                   value={expression}
                   onChange={(e) => setExpression(e.target.value)}
-                  placeholder={unitConfig.inputUnit === 'inch' ? '例如: 1/4 + 1/8 或 1.25 * 2' : '例如: 25.4 + 1.25 * 2'}
+                  placeholder={exprUnit === 'inch' ? '例如: 1/4 + 1/8 或 1.25 * 2' : '例如: 25.4 + 1.25 * 2'}
                   className="w-full bg-[#1f2933] border border-[#52606d] focus:border-[#3aad42] rounded-lg px-3 py-2 text-sm text-[#f5f7fa] font-mono outline-none transition-colors"
                 />
               </div>
@@ -829,7 +861,7 @@ export const CalculatorModal: React.FC<CalculatorModalProps> = ({
                   </div>
                   {expressionResult.isConverted && !expressionResult.error && (
                     <div className="text-xs text-[#9aa5b1] font-mono mt-0.5">
-                      输入原值: {expressionResult.inputDisplay} {unitConfig.inputUnit}
+                      输入原值: {expressionResult.inputDisplay} {exprUnit}
                     </div>
                   )}
                 </div>

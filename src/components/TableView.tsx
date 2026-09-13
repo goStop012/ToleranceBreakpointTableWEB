@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Edit2, Trash2, Plus, Check, X } from 'lucide-react';
-import { InputMode, PositionType, TableData, TableItem } from '../types/table';
+import { InputMode, PositionType, TableData, TableItem, ToleranceInputState } from '../types/table';
 import { UnitConfig } from '../types/unit';
 import { PositionOption } from '../types/position';
 import { ItemRow } from './ItemRow';
@@ -12,7 +12,17 @@ interface TableViewProps {
   positions?: PositionOption[];
   onToggleStar: (id: string) => void;
   onPositionChange: (id: string, position: PositionType) => void;
-  onValueChange: (id: string, value: string, rawInput?: string, rawUnit?: 'mm' | 'inch') => void;
+  onValueChange: (
+    id: string,
+    value: string,
+    rawInput?: string,
+    rawUnit?: 'mm' | 'inch',
+    extra?: {
+      source?: 'tolerance' | 'expression';
+      expression?: string;
+      toleranceInput?: ToleranceInputState;
+    }
+  ) => void;
   onOpenCalculator: (item: TableItem) => void;
   onAddAfter: (id: string) => void;
   onDeleteItem: (id: string) => void;

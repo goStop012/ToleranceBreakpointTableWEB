@@ -178,16 +178,24 @@ export function recalculateTableItem(
   if (it.source === 'expression' && it.expression && it.expression.trim() !== '') {
     const ev = evaluateExpression(it.expression);
     if (!ev.error) {
-      let valInInput = ev.value;
-      if (strategy === 'convert_display' && prevConfig.inputUnit !== nextConfig.inputUnit) {
-        valInInput = convertLength(valInInput, prevConfig.inputUnit, nextConfig.inputUnit);
-      }
-      const dispVal = convertLength(valInInput, nextConfig.inputUnit, nextConfig.displayUnit);
+      // 物理量纲锚点：优先使用记录自身的 expressionUnit，其次 rawUnit，最后回退至切换前的 inputUnit
+      const originUnit: LengthUnit =
+        it.expressionUnit ||
+        (it.rawUnit === 'inch' || it.rawUnit === 'mm' ? (it.rawUnit as LengthUnit) : prevConfig.inputUnit);
+
+      const valInOrigin = ev.value;
+      const dispVal = convertLength(valInOrigin, originUnit, nextConfig.displayUnit);
       const formatted = formatLengthValue(dispVal, nextConfig.displayUnit, targetDecimals);
+
+      const originDecimals = originUnit === 'mm' ? nextConfig.mmDecimals : nextConfig.inchDecimals;
+      const rawEvaluated = formatLengthValue(valInOrigin, originUnit, originDecimals);
+
       return {
         ...it,
         value: formatted,
-        rawUnit: nextConfig.inputUnit,
+        expressionUnit: originUnit,
+        rawInput: rawEvaluated,
+        rawUnit: originUnit,
       };
     }
   }
